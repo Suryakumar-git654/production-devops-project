@@ -1,0 +1,17 @@
+# Environment - NEVER commit this
+.env
+
+# Backups
+backups/
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
+npm-debug.log
+
+# OS
+.DS_Store
+Thumbs.db

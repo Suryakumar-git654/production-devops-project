@@ -1,0 +1,64 @@
+name: CI/CD - Build, Test & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Image
+        run: docker build -t shopzone-backend:test ./backend
+
+      - name: Build Frontend Image
+        run: docker build -t shopzone-frontend:test ./frontend
+
+      - name: Test Backend Starts
+        run: |
+          docker run -d --name test-backend \
+            -e DB_HOST=localhost -e REDIS_HOST=localhost \
+            -p 8080:8080 shopzone-backend:test
+          sleep 8
+          docker logs test-backend
+          docker rm -f test-backend || true
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            cd /home/ubuntu/production-devops-project 2>/dev/null || \
+              git clone https://github.com/${{ github.repository }}.git /home/ubuntu/production-devops-project && \
+              cd /home/ubuntu/production-devops-project
+            git pull origin main
+            [ -f .env ] || cp .env.example .env
+            bash deploy.sh
+
+      - name: Health Check
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/production-devops-project
+            bash healthcheck.sh
